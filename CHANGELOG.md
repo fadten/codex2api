@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.3.7 - 2026-06-19
+
+### Features
+
+- **Per-account on-demand usage refresh button (accounts).** Added `POST /api/admin/accounts/:id/usage/refresh`, which synchronously runs `ProbeUsageSnapshot` (preferring the wham endpoint — zero quota cost, no test conversation) and returns the latest 5h/7d usage. The usage column now shows a refresh icon next to each progress bar (wired into the desktop table, mobile cards, and personal mode) that re-pulls that account's bars instantly, with a spinner and failure toast. Also fixes progress bars not refreshing after a test connection: accounts that just finished a test are now force-scheduled for a delayed re-pull even when they already have usage data (e.g. showing 100%), bypassing the "has data = fresh" check in `needsUsageReload`.
+- **Editable Prompt Filter extra rules.** The prompt-filter "extra rules" can now be edited from the UI (add/update/remove) instead of being config-only, with full validation feedback on the edit form.
+- **Sync WHAM subscription expiry.** The subscription expiry time is now parsed from the WHAM usage response and used to refresh `subscription_expires_at` in both the runtime and the database via the wham probe, with added time-format compatibility and persistence-consistency tests.
+
+### Fixes
+
+- **Codex invite dropdown no longer hides disabled/abnormal but credential-usable accounts (#281).** Relaxed `isCodexInviteCandidate` to match the backend: only relay / AT-only accounts are excluded, dropping the `enabled`/`locked`/`status` filters, since `SendCodexInvite` only requires an access token and does not check those fields — otherwise accounts that were merely paused from scheduling or temporarily abnormal (but still credential-usable) were hidden. The account picker also gains status dots + disabled/locked/banned/error badges on items and the selected account, a light warning when an abnormal-but-usable account is selected, and full keyboard navigation (↑↓ to move, Enter to confirm, Esc to close, highlight scrolls into view).
+- **"Normal" account card count vs. filter mismatch yielding an empty list.** The "normal accounts" card counts as `total − abnormal − rate-limited` (folding `refreshing` and similar non-abnormal/non-rate-limited states into "normal"), but clicking the "normal" filter applied an extra hard `status ∈ {active, ready}` constraint that excluded `refreshing`/`cooldown` states. With many accounts refreshing this produced a card showing "40k+ normal" that opened to an empty list. Both paths now use the same health semantics (abnormal > rate-limited > normal): the "normal" filter is `not abnormal && not rate-limited`, matching the card exactly.
+- **Transient failures no longer force admin logout (#admin auth).** `checkAuth` previously cleared `admin_key` and forced re-login on any `catch` or `!res.ok`, so any network blip / service restart / 5xx during the 30s polling loop logged the user out and required re-entering the key. The key is now cleared only on a genuine 401 (invalid key); under transient network/5xx failures an existing key optimistically stays logged in and the next poll self-corrects.
+- **Improved Prompt Filter hit-log context display.** Refined how prompt-filter match context is captured and rendered in the hit logs for clearer surrounding context.
+
 ## v2.3.6 - 2026-06-18
 
 ### Features
