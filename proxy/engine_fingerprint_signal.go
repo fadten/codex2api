@@ -102,12 +102,13 @@ func validateEngineFingerprintSignal(signal EngineFingerprintSignal) error {
 }
 
 func matchEngineFingerprintSignal(headers http.Header, body []byte, signal EngineFingerprintSignal) bool {
+	signalType := strings.TrimSpace(signal.Type)
 	for _, match := range signal.Match {
 		match = strings.TrimSpace(match)
 		if match == "" {
 			continue
 		}
-		switch signal.Type {
+		switch signalType {
 		case FingerprintSignalHeaderExact:
 			if matchHeaderExact(headers, match) {
 				return true
@@ -129,7 +130,21 @@ func matchHeaderExact(headers http.Header, name string) bool {
 	if headers == nil {
 		return false
 	}
-	return strings.TrimSpace(headers.Get(name)) != ""
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	for headerName, values := range headers {
+		if strings.ToLower(strings.TrimSpace(headerName)) != name {
+			continue
+		}
+		for _, value := range values {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func matchHeaderPrefix(headers http.Header, prefix string) bool {

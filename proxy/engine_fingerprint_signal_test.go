@@ -34,6 +34,16 @@ func TestEvaluateEngineFingerprintDefaultSignals(t *testing.T) {
 	}
 }
 
+func TestEvaluateEngineFingerprintNormalizesSignalTypeAndHeaderName(t *testing.T) {
+	signals := []EngineFingerprintSignal{
+		{Type: " header_exact ", Match: []string{"session-id"}, Required: true},
+	}
+	headers := http.Header{"session-id": []string{"session-1"}}
+	if !EvaluateEngineFingerprint(headers, nil, signals) {
+		t.Fatal("EvaluateEngineFingerprint() should trim signal type and match raw header names case-insensitively")
+	}
+}
+
 func TestEvaluateEngineFingerprintMatchVariants(t *testing.T) {
 	signals := []EngineFingerprintSignal{
 		{Type: FingerprintSignalHeaderExact, Match: []string{"session-id", "session_id"}, Required: true},
