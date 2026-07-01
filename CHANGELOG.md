@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.3.9 - 2026-07-01
+
+### Features
+
+- **Prompt-filter review supports multiple Moderations API keys (#289).** Low-tier OpenAI accounts only get 50,000 TPM on the Moderations endpoint, so a single key can't keep up with high volume. The prompt-filter review key is upgraded from a single value to a key pool: multiple keys separated by newlines/commas are round-robined (package-level atomic cursor) to spread the quota, and on a `429`/`401`/`403`/`5xx`/network error the call automatically switches to the next key, only handing off to `FailClosed` once every key has failed. Reuses the existing TEXT column to store multiple lines (no DB migration), and the frontend becomes a multi-line textarea showing the configured key count. Single-key configuration behavior is unchanged.
+- **Compact endpoint auto-strips the `-openai-compact` model suffix.** Aggregating gateways like newapi append an `-openai-compact` suffix to `/responses/compact` requests (e.g. `gpt-5.4-openai-compact`). The suffix is now stripped before compact model mapping and validation, so the newapi channel keeps that naming while codex2api treats it as the base model (`gpt-5.4`) internally and forwards upstream, avoiding an "unsupported model" rejection. Only applies to `/v1/responses/compact` — plain `/responses` and the global model mapping are untouched.
+- **Per-account request count limit.** Added a per-account cumulative request-count cap; accounts that reach the limit drop out of scheduling.
+- **Stronger account import/add dedup with optional force-duplicate.** AT imports are deduplicated by OAuth identity, and re-importing valid credentials clears an error/banned (401) state to auto-unban the account; single-account RT/ST adds — which previously had no dedup at all — now dedup by raw credential too. Added an "allow duplicate add" toggle (off by default) that skips dedup and forces a new record, wired through both single-add and batch-import paths. The batch-import dialog gains a unified proxy input (the backend already accepted `proxy_url`; the frontend now sends it).
+- **Hardened Codex client identification strategy.** Added strict official-client identification so a UA merely carrying a codex token no longer triggers an automatic compatibility upgrade; improved Codex client version parsing to cover more official UAs and trailer scenarios; added an engine-fingerprint signal model plus client allow/deny-list data structures and validation logic, with unit tests covering strict/legacy behavior, version boundaries, and policy validation.
+- **Improved Codex custom tool event compatibility.** Extended compatibility handling for Codex custom tool incremental events (including custom deltas).
+- **Removed the usage-reset radar module (`/admin/subscriptions`).** Deleted the Codex Reset Radar implementation on both ends, including the backend `admin/reset_radar.go` with its tests/routes/handler status fields and the frontend Subscriptions page, route, nav item, API, types, and copy.
+
+### Fixes
+
+- **Support socks5/http proxies with special characters in the password (#293).** When a proxy password contained URL-reserved characters like `#` or `?`, both the frontend `new URL` and the backend `url.Parse` failed to parse it, so adding `socks5://user:pass@ip:port` reported "please enter a valid proxy address" and couldn't dial even if added. Added `security.ParseProxyURL` (standard parse first, IPv6-compatible; on failure, percent-encodes the userinfo and retries, then uniformly validates scheme/host/port range), wired into all three dialer parse sites; the frontend validation switches to `new URL` with a lenient regex fallback so special-character passwords are no longer wrongly rejected.
+- **Injected image tool no longer forces plain requests off WebSocket (#304, #288).** The WS→HTTP downgrade decision changed from "does `tools[]` contain an `image_generation` tool" to "is there real image-generation intent": HTTP is only forced for image-only models, `tool_choice=image_generation`, top-level image params, or natural-language image-generation intent, while ordinary requests stay on WS and the injected tool is stripped on the WS path via `stripResponsesImageGenerationTool`. The `chat/completions` path uses the same decision, gaining natural-language intent detection along the way.
+- **Sync subscription expiry after a manual account refresh (#300).** After a renewal, the token JWT's `chatgpt_subscription_active_until` lags, so relying on token refresh alone kept an account's validity stuck at its stale creation-time value. A successful refresh now also fires a zero-cost wham probe to sync the subscription expiry and usage from the server's authoritative data, so both single and batch refreshes update the validity immediately.
+- **Rate-limit cooldown and usage snapshot now track official window resets automatically.** Fixed two opposite-direction state desyncs: after usage is reset early upstream the cooldown wasn't cleared (`probeUsageViaWham` now re-evaluates against wham's authoritative window data even while rate-limited and proactively calls `ClearCooldown` when no longer limited); and after a rate limit expired the usage bar stayed at its old value (`NeedsUsageProbe` now fires a single zero-cost wham refresh when the 5h window reset time has passed but the snapshot still shows pre-reset high usage, guarded by `maxAge` to prevent repeated probing).
+- **Fixed engine-fingerprint signal matching boundaries.** The fingerprint signal type is now trimmed before matching so a valid config with surrounding whitespace still hits; `header_exact` now iterates the original header keys with case-insensitive matching; added regression tests for signal types and non-canonical header keys.
+- **Prevent Codex User-Agent from falling back to the Go default (#299).** Guards against the upstream Codex request's User-Agent unexpectedly reverting to Go's default value.
+
+### Security
+
+- **Bumped `golang.org/x/image` to v0.43.0.** Clears a security-scan alert.
+
+### Build
+
+- **Container `go mod download` uses the goproxy.cn mirror.** Speeds up dependency fetching during container builds.
+
 ## v2.3.8 - 2026-06-20
 
 ### Fixes
