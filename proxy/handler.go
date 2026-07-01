@@ -2939,8 +2939,9 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 		h.store.BindSessionAffinity(affinityKey, account, proxyURL)
 		isRelayAccount := account.IsOpenAIResponsesAPI()
 		useWebsocket := h.shouldUseWebsocketForHTTP() && !forceHTTPAfterWSMessageTooBig && !isRelayAccount
-		// 显式生图请求强制走 HTTP：WebSocket 传输大体积图片数据会卡死（issue #220）。
-		if useWebsocket && explicitlyRequestsImageGeneration(codexBody) {
+		// 真实生图意图强制走 HTTP：WebSocket 传输大体积图片数据会卡死（issue #220）。
+		// 仅凭注入的 image_generation 工具不触发降级，普通请求继续走 WS（issue #304）。
+		if useWebsocket && rawResponsesBodyShouldForceHTTPForImageGeneration(codexBody) {
 			useWebsocket = false
 		}
 		upstreamEndpoint := "/v1/responses"
