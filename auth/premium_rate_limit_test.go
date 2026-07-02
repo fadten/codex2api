@@ -113,6 +113,35 @@ func TestProliteIsTreatedAsPremium5hPlan(t *testing.T) {
 	}
 }
 
+// issue #306/#309: k12(教育)等付费工作区计划有 5h 窗口，必须纳入 premium 5h 限流
+// 语义，否则 429 后用量探针会把冷却清掉、账号显示可用但实际仍限流。
+func TestPaidWorkspacePlansAreTreatedAsPremium5hPlans(t *testing.T) {
+	for _, plan := range []string{"k12", "edu", "education", "go", "teamplus", "enterprise", "business"} {
+		if !isPremium5hPlan(plan) {
+			t.Errorf("isPremium5hPlan(%q) = false, want true", plan)
+		}
+	}
+	for _, plan := range []string{"free", ""} {
+		if isPremium5hPlan(plan) {
+			t.Errorf("isPremium5hPlan(%q) = true, want false", plan)
+		}
+	}
+}
+
+func TestK12RateLimitedAccountIsFencedFromScheduling(t *testing.T) {
+	acc := newPremium5hTestAccount("k12", time.Now().Add(45*time.Minute))
+
+	if got := acc.RuntimeStatus(); got != "rate_limited" {
+		t.Fatalf("RuntimeStatus() = %q, want rate_limited", got)
+	}
+	if acc.IsAvailable() {
+		t.Fatal("IsAvailable() = true, want false for k12 5h rate limited account (issue #306/#309)")
+	}
+	if !acc.InLimitedState() {
+		t.Fatal("InLimitedState() = false, want true so the usage probe stays wham-only")
+	}
+}
+
 func TestCleanByRuntimeStatusSkipsPremium5hRateLimitedAccount(t *testing.T) {
 	acc := newPremium5hTestAccount("plus", time.Now().Add(20*time.Minute))
 	store := &Store{
