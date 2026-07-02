@@ -2748,6 +2748,11 @@ func importTokenOAuthIdentityKey(t importToken, conflicts map[string]bool) strin
 	if accountID == "" && strings.TrimSpace(t.accountID) == "" {
 		accountID = strings.TrimSpace(t.chatgptAccountID)
 	}
+	// 个人账号可能只有 user_id（无工作区 account_id），用它兜底做身份键，
+	// 否则文件导入会退化为凭证原文比对，AT 轮换后重复导入。
+	if accountID == "" {
+		accountID = strings.TrimSpace(seed.userID)
+	}
 	if email == "" || accountID == "" {
 		return ""
 	}
@@ -3240,7 +3245,7 @@ func (h *Handler) importAccountsCommon(c *gin.Context, tokens []importToken, pro
 			if tok.accessToken != "" && tok.refreshToken == "" {
 				importSource = "import_at"
 			}
-			if !allowDuplicate && seed.email != "" && seed.accountID != "" {
+			if !allowDuplicate && seed.email != "" && (seed.accountID != "" || seed.userID != "") {
 				if name == "" {
 					if importSource == "import_at" {
 						name = fmt.Sprintf("at-import-%d", idx+1)

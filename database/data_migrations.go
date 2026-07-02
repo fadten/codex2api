@@ -12,6 +12,10 @@ import (
 
 const (
 	dataMigrationOAuthIdentityDedupeV1 = "20260616_oauth_identity_dedupe_v1"
+	// v2: 身份别名补充 user_id。个人账号(无工作区 account_id)此前只按凭证原文
+	// 去重，AT 轮换后产生的重复账号 v1 清不掉；v2 把 email+user_id 也纳入别名
+	// 后重跑一次合并。
+	dataMigrationOAuthIdentityDedupeV2 = "20260702_oauth_identity_dedupe_v2"
 	dataMigrationTimeout               = 5 * time.Minute
 )
 
@@ -28,7 +32,10 @@ func (db *DB) runDataMigrations(ctx context.Context) error {
 	if err := db.ensureDataMigrationsTable(ctx); err != nil {
 		return err
 	}
-	return db.runDataMigrationOnce(ctx, dataMigrationOAuthIdentityDedupeV1, db.dedupeOAuthIdentityAccounts)
+	if err := db.runDataMigrationOnce(ctx, dataMigrationOAuthIdentityDedupeV1, db.dedupeOAuthIdentityAccounts); err != nil {
+		return err
+	}
+	return db.runDataMigrationOnce(ctx, dataMigrationOAuthIdentityDedupeV2, db.dedupeOAuthIdentityAccounts)
 }
 
 func (db *DB) runDataMigrationsWithTimeout() error {
@@ -210,7 +217,9 @@ func oauthIdentityDedupeAliases(credentials map[string]interface{}) []string {
 		return nil
 	}
 	seen := make(map[string]struct{}, 2)
-	for _, key := range []string{"account_id", "chatgpt_account_id"} {
+	// user_id 也是身份别名：个人账号可能没有工作区 account_id，且旧版 wham
+	// 回填曾把 user_id 写进 account_id 字段，两种形态要能合并到同一组。
+	for _, key := range []string{"account_id", "chatgpt_account_id", "user_id"} {
 		accountID := strings.TrimSpace(credentialStringFromMap(credentials, key))
 		if accountID == "" {
 			continue

@@ -285,6 +285,54 @@ func TestFindActiveAccountByOAuthIdentityMatchesUserID(t *testing.T) {
 	}
 }
 
+// v2 迁移：user_id 也是身份别名——个人账号（credentials 只有 user_id）和被旧版
+// wham 回填污染（user_id 写进了 account_id）的账号必须合并为一组。
+func TestSQLiteDataMigrationV2DedupesByUserID(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "codex2api.db")
+	ctx := context.Background()
+
+	db, err := New("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("New(sqlite) 返回错误: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.conn.ExecContext(ctx, `DELETE FROM data_migrations WHERE version = $1`, dataMigrationOAuthIdentityDedupeV2); err != nil {
+		t.Fatalf("清理 v2 data migration 标记返回错误: %v", err)
+	}
+
+	// 旧账号：account_id 字段被污染成 user_id（旧版 wham 回填）
+	pollutedID, err := db.InsertAccountWithCredentials(ctx, "polluted", map[string]interface{}{
+		"access_token": "at-old-rotation",
+		"email":        "solo@example.com",
+		"account_id":   "user-dup999",
+	}, "")
+	if err != nil {
+		t.Fatalf("Insert polluted 返回错误: %v", err)
+	}
+	// 新账号：正确存在 user_id 键（新导入路径）
+	freshID, err := db.InsertAccountWithCredentials(ctx, "fresh", map[string]interface{}{
+		"access_token": "at-new-rotation",
+		"email":        "solo@example.com",
+		"user_id":      "user-dup999",
+	}, "")
+	if err != nil {
+		t.Fatalf("Insert fresh 返回错误: %v", err)
+	}
+
+	if err := db.runDataMigrationsWithTimeout(); err != nil {
+		t.Fatalf("runDataMigrations 返回错误: %v", err)
+	}
+
+	var remaining int
+	if err := db.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts WHERE id IN ($1, $2) AND status <> 'deleted' AND COALESCE(error_message, '') <> 'deleted'`, pollutedID, freshID).Scan(&remaining); err != nil {
+		t.Fatalf("查询存活账号数返回错误: %v", err)
+	}
+	if remaining != 1 {
+		t.Fatalf("v2 迁移后存活账号 = %d, want 1（user_id 重复应被合并）", remaining)
+	}
+}
+
 func TestSQLiteDataMigrationDedupesOAuthIdentityOnce(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "codex2api.db")
 	ctx := context.Background()
